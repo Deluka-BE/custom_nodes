@@ -1,0 +1,67 @@
+name: Publish npm (explicit approval)
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing immutable GitHub release tag (vX.Y.Z)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type the exact npm package name to authorize publication'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: startsWith(github.ref, 'refs/tags/v') && vars.NPM_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      - run: bash tools/check-security.sh
+      - run: node tools/check-source.cjs
+      - run: npm test
+      - run: node --test tools/preflight.test.cjs
+      - run: npm audit --audit-level=high
+      - run: npm audit signatures
+      - run: node tools/verify-pack.cjs
+  publish:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Verify approval settings, release identity and immutable tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          CONFIRM_PACKAGE: ${{ inputs.confirm }}
+          EXPECTED_NPM_OWNER: ${{ vars.NPM_OWNER }}
+        run: node tools/prepare-publish.cjs
+      - run: node tools/verify-pack.cjs
+      - name: Publish once with OIDC and provenance
+        # No dependency installation, lifecycle scripts, tokens or retries.
+        run: npm publish --access public --provenance --ignore-scripts --registry=https://registry.npmjs.org
