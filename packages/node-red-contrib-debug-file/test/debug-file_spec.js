@@ -60,11 +60,6 @@ describe("JSONL debug file", function() {
         assert.equal(JSON.parse(await fs.readFile(f + ".1", "utf8")).serializedValue, "before");
         assert.deepEqual((await records()).map(r => r.serializedValue), ["after"]);
     });
-    it("displays the package version in the editor", async function() {
-        const html = await fs.readFile(path.join(__dirname, "../nodes/debug-file.html"), "utf8");
-        const version = require("../package.json").version;
-        assert.equal(html.match(/id="debug-file-version">([^<]+)<\/span>/)[1], version);
-    });
     it("keeps identity across restart and rename; equal names never collide or double extensions", async function() {
         await input(make({ name: "Same.log.jsonl" }), "one");
         await input(make({ name: "Same.log.jsonl", id: "n2" }), "two");

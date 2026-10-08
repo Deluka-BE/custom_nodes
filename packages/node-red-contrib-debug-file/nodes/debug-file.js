@@ -168,5 +168,8 @@ module.exports = function (RED) {
         });
         node.on("close", done => { closing = true; closeDone = done; finishClose(); });
     }
-    RED.nodes.registerType("debug-file", DebugFileNode);
+    // Node-RED exports this package metadata to RED.settings in the editor.
+    RED.nodes.registerType("debug-file", DebugFileNode, {
+        settings: { debugFileVersion: { value: require("../package.json").version, exportable: true } }
+    });
 };
