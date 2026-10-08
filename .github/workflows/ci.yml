@@ -28,7 +28,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci --ignore-scripts
-        working-directory: packages/node-red-contrib-debug-file
       - run: node tools/check-source.cjs
       - run: npm test
         working-directory: packages/${{ matrix.package }}
@@ -45,11 +44,8 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
-        working-directory: packages/node-red-contrib-debug-file
       - run: npm audit --audit-level=high
-        working-directory: packages/node-red-contrib-debug-file
       - run: npm audit signatures
-        working-directory: packages/node-red-contrib-debug-file
   workflow-and-secrets:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

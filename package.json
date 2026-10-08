@@ -1,0 +1,12 @@
+{
+  "name": "custom-nodes-development",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "devDependencies": {
+    "mocha": "12.0.3",
+    "node-red": "5.0.8",
+    "node-red-node-test-helper": "0.3.6"
+  }
+}

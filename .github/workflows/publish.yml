@@ -38,16 +38,13 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
-        working-directory: packages/${{ inputs.package }}
       - run: bash tools/check-security.sh
       - run: node tools/check-source.cjs
       - run: npm test
         working-directory: packages/${{ inputs.package }}
       - run: node --test tools/preflight.test.cjs
       - run: npm audit --audit-level=high
-        working-directory: packages/${{ inputs.package }}
       - run: npm audit signatures
-        working-directory: packages/${{ inputs.package }}
       - run: node tools/verify-pack.cjs
   publish:
     env:
