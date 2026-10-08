@@ -9,12 +9,12 @@ const tool = path.join(__dirname, 'prepare-publish.cjs');
 const sha = 'a'.repeat(40);
 function fixture() {
   return {
-    pkg: {name:'node-red-contrib-fixture',version:'1.0.0',repository:{url:'git+https://github.com/owner/repo.git'}},
+    pkg: {name:'node-red-contrib-debug-file',version:'1.0.0',repository:{url:'git+https://github.com/owner/repo.git'}},
     env: {protection_rules:[{type:'required_reviewers',reviewers:[{type:'User'}]}],deployment_branch_policy:{custom_branch_policies:true}},
-    policies:{branch_policies:[{name:'v*',type:'tag'}]},
-    protection:{enforce_admins:{enabled:true},required_pull_request_reviews:{required_approving_review_count:1},required_status_checks:{strict:true,checks:['test (22)','test (24)','audit','workflow-and-secrets','codeql','dependency-review'].map(context=>({context,app_id:15368}))}},
-    rule:{id:1,target:'tag',enforcement:'active',bypass_actors:[],conditions:{ref_name:{include:['refs/tags/v*']}},rules:[{type:'update'},{type:'deletion'}]},
-    release:{tag_name:'v1.0.0',draft:false,prerelease:false,assets:[{name:'node-red-contrib-fixture-1.0.0.tgz'}]},
+    policies:{branch_policies:[{name:'node-red-contrib-debug-file/v*',type:'tag'}]},
+    protection:{enforce_admins:{enabled:true},required_pull_request_reviews:{required_approving_review_count:1},required_status_checks:{strict:true,checks:['test (node-red-contrib-debug-file, 22)','test (node-red-contrib-debug-file, 24)','audit','workflow-and-secrets','codeql','dependency-review'].map(context=>({context,app_id:15368}))}},
+    rule:{id:1,target:'tag',enforcement:'active',bypass_actors:[],conditions:{ref_name:{include:['refs/tags/node-red-contrib-debug-file/v*']}},rules:[{type:'update'},{type:'deletion'}]},
+    release:{tag_name:'node-red-contrib-debug-file/v1.0.0',draft:false,prerelease:false,assets:[{name:'node-red-contrib-debug-file-1.0.0.tgz'}]},
     status:200, metadata:{maintainers:[{name:'verified-owner'}],versions:{}},sha,remote:sha
   };
 }
@@ -42,18 +42,19 @@ for (const [name, change, expected] of cases) test(name, () => {
     const f=fixture(); if(change) change(f);
     fs.mkdirSync(path.join(dir,'bin'));
     fs.writeFileSync(path.join(dir,'fixture.json'),JSON.stringify(f));
-    fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify(f.pkg));
+    fs.mkdirSync(path.join(dir,'packages/node-red-contrib-debug-file'),{recursive:true});
+    fs.writeFileSync(path.join(dir,'packages/node-red-contrib-debug-file/package.json'),JSON.stringify(f.pkg));
     fs.writeFileSync(path.join(dir,'fetch.cjs'), `const f=require(process.env.FIXTURE);global.fetch=async()=>{if(f.networkError)throw Error('fixture network failure');return {status:f.status,json:async()=>f.metadata}};`);
     const stub = `#!/usr/bin/env node
 const fs=require('node:fs');const path=require('node:path');const f=require(process.env.FIXTURE);const a=process.argv.slice(2);let out='';
 if(path.basename(process.argv[1])==='git') {
- if(a[0]==='ls-remote')out=f.remote+'\\trefs/tags/v1.0.0';
+ if(a[0]==='ls-remote')out=f.remote+'\\trefs/tags/node-red-contrib-debug-file/v1.0.0';
  else if(a[0]==='rev-parse')out=f.sha;
  else if(a[0]==='merge-base'&&f.notAncestor)process.exit(1);
 } else if(a[0]==='api') {
  const route=a[1];let v;
  if(route.endsWith('/deployment-branch-policies'))v=f.policies;
- else if(route.endsWith('/environments/npm-publish'))v=f.env;
+ else if(route.endsWith('/environments/npm-node-red-contrib-debug-file'))v=f.env;
  else if(route.endsWith('/branches/main/protection'))v=f.protection;
  else if(route.endsWith('/rulesets/1'))v=f.rule;
  else if(route.endsWith('/rulesets'))v=[f.rule];
@@ -66,9 +67,12 @@ if(path.basename(process.argv[1])==='git') {
 process.stdout.write(out.replace('\\t','\t'));
 `;
     for(const command of ['gh','git']) fs.writeFileSync(path.join(dir,'bin',command),stub,{mode:0o755});
-    const result=cp.spawnSync(process.execPath,[tool],{cwd:dir,encoding:'utf8',env:{...process.env,
+    fs.mkdirSync(path.join(dir,'tools'));
+    for (const file of ['prepare-publish.cjs','package.cjs']) fs.copyFileSync(path.join(__dirname,file),path.join(dir,'tools',file));
+    fs.copyFileSync(path.join(__dirname,'../packages.json'),path.join(dir,'packages.json'));
+    const result=cp.spawnSync(process.execPath,[path.join(dir,'tools/prepare-publish.cjs')],{cwd:dir,encoding:'utf8',env:{...process.env,
       PATH:`${path.join(dir,'bin')}:${process.env.PATH}`,FIXTURE:path.join(dir,'fixture.json'),NODE_OPTIONS:`--require=${path.join(dir,'fetch.cjs')}`,
-      GITHUB_REPOSITORY:'owner/repo',GITHUB_REF:'refs/tags/v1.0.0',GITHUB_SHA:sha,GITHUB_ENV:path.join(dir,'output.env'),RELEASE_TAG:'v1.0.0',CONFIRM_PACKAGE:'node-red-contrib-fixture',EXPECTED_NPM_OWNER:'verified-owner'
+      PACKAGE_NAME:'node-red-contrib-debug-file',GITHUB_REPOSITORY:'owner/repo',GITHUB_REF:'refs/tags/node-red-contrib-debug-file/v1.0.0',GITHUB_SHA:sha,GITHUB_ENV:path.join(dir,'output.env'),RELEASE_TAG:'node-red-contrib-debug-file/v1.0.0',CONFIRM_PACKAGE:'node-red-contrib-debug-file',EXPECTED_NPM_OWNER:'verified-owner'
     }});
     assert.equal(result.status,expected,result.stderr);
     if(expected) assert(!fs.existsSync(path.join(dir,'output.env')), 'Failed preflight must not prepare an artifact');

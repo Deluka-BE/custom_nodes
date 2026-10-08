@@ -4,6 +4,7 @@ const cp = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+if (process.env.PACKAGE_NAME) process.chdir(require('./package.cjs')().directory);
 const pkg = JSON.parse(fs.readFileSync('package.json'));
 assert.match(pkg.name, /^(?:@[a-z0-9-]+\/)?node-red-contrib-[a-z0-9-]+$/);
 assert(pkg.keywords.includes('node-red'));

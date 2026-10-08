@@ -1,0 +1,6 @@
+{
+  "node-red-contrib-debug-file": {
+    "path": "packages/node-red-contrib-debug-file",
+    "environment": "npm-node-red-contrib-debug-file"
+  }
+}

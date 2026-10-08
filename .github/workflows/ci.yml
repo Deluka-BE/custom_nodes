@@ -11,10 +11,13 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test:
+    env:
+      PACKAGE_NAME: ${{ matrix.package }}
     strategy:
       fail-fast: false
       matrix:
         node: [22, 24]
+        package: [node-red-contrib-debug-file]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -25,8 +28,10 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci --ignore-scripts
+        working-directory: packages/node-red-contrib-debug-file
       - run: node tools/check-source.cjs
       - run: npm test
+        working-directory: packages/${{ matrix.package }}
       - run: node --test tools/preflight.test.cjs
       - run: node tools/verify-pack.cjs
   audit:
@@ -40,8 +45,11 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
+        working-directory: packages/node-red-contrib-debug-file
       - run: npm audit --audit-level=high
+        working-directory: packages/node-red-contrib-debug-file
       - run: npm audit signatures
+        working-directory: packages/node-red-contrib-debug-file
   workflow-and-secrets:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

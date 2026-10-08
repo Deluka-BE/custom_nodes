@@ -2,8 +2,13 @@ name: Publish npm (explicit approval)
 on:
   workflow_dispatch:
     inputs:
+      package:
+        description: Registered package
+        required: true
+        type: choice
+        options: [node-red-contrib-debug-file]
       tag:
-        description: 'Existing immutable GitHub release tag (vX.Y.Z)'
+        description: 'Existing immutable GitHub release tag (PACKAGE/vX.Y.Z)'
         required: true
         type: string
       confirm:
@@ -13,11 +18,13 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: npm-publish
+  group: npm-publish-${{ inputs.package }}
   cancel-in-progress: false
 jobs:
   validate:
-    if: startsWith(github.ref, 'refs/tags/v') && vars.NPM_PUBLISH_ENABLED == 'true'
+    env:
+      PACKAGE_NAME: ${{ inputs.package }}
+    if: startsWith(github.ref, format('refs/tags/{0}/v', inputs.package)) && vars.NPM_PUBLISH_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -31,18 +38,25 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
+        working-directory: packages/${{ inputs.package }}
       - run: bash tools/check-security.sh
       - run: node tools/check-source.cjs
       - run: npm test
+        working-directory: packages/${{ inputs.package }}
       - run: node --test tools/preflight.test.cjs
       - run: npm audit --audit-level=high
+        working-directory: packages/${{ inputs.package }}
       - run: npm audit signatures
+        working-directory: packages/${{ inputs.package }}
       - run: node tools/verify-pack.cjs
   publish:
+    env:
+      PACKAGE_NAME: ${{ inputs.package }}
+    if: vars.NPM_PUBLISH_NODE_RED_CONTRIB_DEBUG_FILE_ENABLED == 'true'
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: npm-publish
+    environment: npm-${{ inputs.package }}
     permissions:
       contents: read
       id-token: write
@@ -64,4 +78,4 @@ jobs:
       - run: node tools/verify-pack.cjs
       - name: Publish once with OIDC and provenance
         # No dependency installation, lifecycle scripts, tokens or retries.
-        run: npm publish --access public --provenance --ignore-scripts --registry=https://registry.npmjs.org
+        run: npm publish "$RELEASE_ARCHIVE" --access public --provenance --ignore-scripts --registry=https://registry.npmjs.org
