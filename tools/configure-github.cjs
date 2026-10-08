@@ -22,7 +22,7 @@ if (failed) throw new Error('Cannot disable publishing; stop setup');
 apply('Package publishing disabled', `repos/${repo}/actions/variables`, 'POST', {name:'NPM_PUBLISH_NODE_RED_CONTRIB_DEBUG_FILE_ENABLED', value:'false'});
 apply('Read-only workflow defaults', `repos/${repo}/actions/permissions/workflow`, 'PUT', {default_workflow_permissions:'read', can_approve_pull_request_reviews:false});
 apply('Main protection', `repos/${repo}/branches/main/protection`, 'PUT', {
-  required_status_checks:{strict:true,checks:['test (node-red-contrib-debug-file, 22)','test (node-red-contrib-debug-file, 24)','audit','workflow-and-secrets','codeql','dependency-review'].map(context => ({context,app_id:15368}))},
+  required_status_checks:{strict:true,checks:['test (22, node-red-contrib-debug-file)','test (24, node-red-contrib-debug-file)','audit','workflow-and-secrets','codeql','dependency-review'].map(context => ({context,app_id:15368}))},
   enforce_admins:true,
   required_pull_request_reviews:{dismiss_stale_reviews:true,require_code_owner_reviews:true,required_approving_review_count:1,require_last_push_approval:true},
   restrictions:null, required_linear_history:true, allow_force_pushes:false, allow_deletions:false, required_conversation_resolution:true

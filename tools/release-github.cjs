@@ -14,8 +14,13 @@ const run = (cmd,args) => cp.execFileSync(cmd,args,{encoding:'utf8'}).trim();
 JSON.parse(run('gh',['api',`repos/${repo}`])); // Fail on absent repo or inaccessible auth.
 const commit = run('git',['rev-parse',`${tag}^{commit}`]);
 const localTag = run('git',['rev-parse',tag]);
-const remoteTag = run('git',['ls-remote',`https://github.com/${repo}.git`,`refs/tags/${tag}`]).split('\t')[0];
+const remoteTag = run('git',['ls-remote',`git@github.com:${repo}.git`,`refs/tags/${tag}`]).split('\t')[0];
 assert.equal(remoteTag,localTag,'Push and verify tag first; never move an existing tag');
+assert.equal(run('git',['rev-parse','HEAD']), commit, 'Release exact validated checkout');
+assert.equal(run('git',['status','--porcelain']), '', 'Release checkout must be clean');
+run('git',['merge-base','--is-ancestor',commit,'origin/main']);
+const checks = JSON.parse(run('gh',['api',`repos/${repo}/commits/${commit}/check-runs?per_page=100`]));
+require('./release-gates.cjs').checkRuns(checks);
 const pkg = JSON.parse(run('git',['show',`${commit}:${selected.path}/package.json`]));
 assert.equal(tag,`${selected.name}/v${pkg.version}`);
 const archive = path.resolve(archiveArg);
@@ -31,6 +36,9 @@ for(const entry of files) {
 }
 assert(fs.statSync(notes).isFile());
 const hash = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
+require('./release-gates.cjs').artifactHash(pkg, hash);
+for (const mode of ['development','actionable','release']) cp.execFileSync(process.execPath, [path.join(__dirname,'audit.cjs'),mode], {stdio:'inherit', env:{...process.env,RELEASE_ARCHIVE:archive,EXPECTED_SHA256:hash}});
+run('npm',['audit','signatures']);
 const existing=cp.spawnSync('gh',['api',`repos/${repo}/releases/tags/${encodeURIComponent(tag)}`],{encoding:'utf8'});
 assert(existing.status !== 0, 'Release already exists; inspect it, never overwrite');
 assert(/HTTP 404/.test(existing.stderr),'Release absence not verified; stop on permissions/network errors');

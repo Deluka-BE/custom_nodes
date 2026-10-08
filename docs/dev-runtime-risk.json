@@ -1,0 +1,51 @@
+{
+  "owner": "Deluka-BE",
+  "acceptedOn": "2026-10-08",
+  "expiresOn": "2026-11-08",
+  "npmPath": "node_modules/@node-red/registry/node_modules/npm",
+  "npmVersion": "11.21.0",
+  "findings": {
+    "brace-expansion": {
+      "version": "5.0.9",
+      "severity": "high",
+      "advisories": [
+        1240103,
+        1240107,
+        1240111
+      ]
+    },
+    "http-cache-semantics": {
+      "version": "4.2.0",
+      "severity": "high",
+      "advisories": [
+        1240991
+      ]
+    },
+    "ip-address": {
+      "version": "10.5.0",
+      "severity": "moderate",
+      "advisories": [
+        1239948,
+        1239949,
+        1240097,
+        1240098
+      ]
+    },
+    "postcss-selector-parser": {
+      "version": "7.1.4",
+      "severity": "moderate",
+      "advisories": [
+        1241232
+      ]
+    },
+    "undici": {
+      "version": "6.28.0",
+      "severity": "high",
+      "advisories": [
+        1239934,
+        1240039,
+        1240042
+      ]
+    }
+  }
+}

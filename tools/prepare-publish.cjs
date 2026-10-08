@@ -21,7 +21,7 @@ const api = route => JSON.parse(run('gh',['api',route]));
   assert(policies.length === 1 && policies[0].name === `${selected.name}/v*` && policies[0].type === 'tag', 'Environment must allow only v* tags');
   const protection = api(`repos/${repo}/branches/main/protection`);
   assert(protection.enforce_admins.enabled && protection.required_pull_request_reviews.required_approving_review_count >= 1, 'Protected main and PR approvals required');
-  assert(protection.required_status_checks.strict && ['test (node-red-contrib-debug-file, 22)','test (node-red-contrib-debug-file, 24)','audit','workflow-and-secrets','codeql','dependency-review'].every(name => protection.required_status_checks.checks.some(check => check.context === name && check.app_id === 15368)), 'Required security checks missing');
+  assert(protection.required_status_checks.strict && ['test (22, node-red-contrib-debug-file)','test (24, node-red-contrib-debug-file)','audit','workflow-and-secrets','codeql','dependency-review'].every(name => protection.required_status_checks.checks.some(check => check.context === name && check.app_id === 15368)), 'Required security checks missing');
   const rules = api(`repos/${repo}/rulesets`);
   const details = rules.filter(r => r.target === 'tag' && r.enforcement === 'active').map(r => api(`repos/${repo}/rulesets/${r.id}`));
   assert(details.some(r => (r.conditions.ref_name.include.includes(`refs/tags/${selected.name}/v*`) || r.conditions.ref_name.include.includes('refs/tags/*/v*')) && ['update','deletion'].every(type => r.rules.some(rule => rule.type === type)) && (!r.bypass_actors || !r.bypass_actors.length)), 'Immutable v* tag ruleset required without bypass actors');

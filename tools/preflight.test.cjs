@@ -12,7 +12,7 @@ function fixture() {
     pkg: {name:'node-red-contrib-debug-file',version:'1.0.0',repository:{url:'git+https://github.com/owner/repo.git'}},
     env: {protection_rules:[{type:'required_reviewers',reviewers:[{type:'User'}]}],deployment_branch_policy:{custom_branch_policies:true}},
     policies:{branch_policies:[{name:'node-red-contrib-debug-file/v*',type:'tag'}]},
-    protection:{enforce_admins:{enabled:true},required_pull_request_reviews:{required_approving_review_count:1},required_status_checks:{strict:true,checks:['test (node-red-contrib-debug-file, 22)','test (node-red-contrib-debug-file, 24)','audit','workflow-and-secrets','codeql','dependency-review'].map(context=>({context,app_id:15368}))}},
+    protection:{enforce_admins:{enabled:true},required_pull_request_reviews:{required_approving_review_count:1},required_status_checks:{strict:true,checks:['test (22, node-red-contrib-debug-file)','test (24, node-red-contrib-debug-file)','audit','workflow-and-secrets','codeql','dependency-review'].map(context=>({context,app_id:15368}))}},
     rule:{id:1,target:'tag',enforcement:'active',bypass_actors:[],conditions:{ref_name:{include:['refs/tags/node-red-contrib-debug-file/v*']}},rules:[{type:'update'},{type:'deletion'}]},
     release:{tag_name:'node-red-contrib-debug-file/v1.0.0',draft:false,prerelease:false,assets:[{name:'node-red-contrib-debug-file-1.0.0.tgz'}]},
     status:200, metadata:{maintainers:[{name:'verified-owner'}],versions:{}},sha,remote:sha

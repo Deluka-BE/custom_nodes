@@ -1,0 +1,6 @@
+{
+  "name": "custom-nodes-release-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Release tooling uses Node builtins and externally verified command line tools only."
+}

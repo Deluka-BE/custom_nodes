@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '19 6 * * 1'
   workflow_dispatch:
 permissions:
   contents: read
@@ -31,7 +33,7 @@ jobs:
       - run: node tools/check-source.cjs
       - run: npm test
         working-directory: packages/${{ matrix.package }}
-      - run: node --test tools/preflight.test.cjs
+      - run: node --test tools/*.test.cjs
       - run: node tools/verify-pack.cjs
   audit:
     runs-on: ubuntu-24.04
@@ -44,7 +46,21 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
-      - run: npm audit --audit-level=high
+      - name: Full development audit (visible monitored report)
+        run: node tools/audit.cjs development
+      - name: Block actionable development dependencies
+        run: node tools/audit.cjs actionable
+      - name: Strict production artifact and release tooling audits
+        env:
+          PACKAGE_NAME: node-red-contrib-debug-file
+        run: node tools/audit.cjs release
+      - name: Retain complete audit evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: audit-${{ github.job }}
+          path: audit-reports/
+          if-no-files-found: error
       - run: npm audit signatures
   workflow-and-secrets:
     runs-on: ubuntu-24.04
