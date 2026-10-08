@@ -24,7 +24,7 @@ const api = route => JSON.parse(run('gh',['api',route]));
   assert(protection.required_status_checks.strict && ['test (node-red-contrib-debug-file, 22)','test (node-red-contrib-debug-file, 24)','audit','workflow-and-secrets','codeql','dependency-review'].every(name => protection.required_status_checks.checks.some(check => check.context === name && check.app_id === 15368)), 'Required security checks missing');
   const rules = api(`repos/${repo}/rulesets`);
   const details = rules.filter(r => r.target === 'tag' && r.enforcement === 'active').map(r => api(`repos/${repo}/rulesets/${r.id}`));
-  assert(details.some(r => r.conditions.ref_name.include.includes(`refs/tags/${selected.name}/v*`) && ['update','deletion'].every(type => r.rules.some(rule => rule.type === type)) && (!r.bypass_actors || !r.bypass_actors.length)), 'Immutable v* tag ruleset required without bypass actors');
+  assert(details.some(r => (r.conditions.ref_name.include.includes(`refs/tags/${selected.name}/v*`) || r.conditions.ref_name.include.includes('refs/tags/*/v*')) && ['update','deletion'].every(type => r.rules.some(rule => rule.type === type)) && (!r.bypass_actors || !r.bypass_actors.length)), 'Immutable v* tag ruleset required without bypass actors');
   const release = api(`repos/${repo}/releases/tags/${encodeURIComponent(tag)}`);
   assert(!release.draft && !release.prerelease && release.tag_name === tag);
   const remoteTag = run('git', ['ls-remote', '--tags', 'origin', `refs/tags/${tag}`]).split('\t')[0];

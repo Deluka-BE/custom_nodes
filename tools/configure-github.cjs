@@ -30,7 +30,7 @@ apply('Main protection', `repos/${repo}/branches/main/protection`, 'PUT', {
 const existingTagRule = get(`repos/${repo}/rulesets`).find(r => r.name === 'Immutable release tags');
 apply('Immutable release tags', `repos/${repo}/rulesets${existingTagRule ? '/' + existingTagRule.id : ''}`, existingTagRule ? 'PUT' : 'POST', {
   name:'Immutable release tags', target:'tag', enforcement:'active', bypass_actors:[],
-  conditions:{ref_name:{include:['refs/tags/node-red-contrib-debug-file/v*'],exclude:[]}}, rules:[{type:'update'},{type:'deletion'}]
+  conditions:{ref_name:{include:['refs/tags/*/v*'],exclude:[]}}, rules:[{type:'update'},{type:'deletion'}]
 });
 apply('Approval environment', `repos/${repo}/environments/npm-node-red-contrib-debug-file`, 'PUT', {
   wait_timer:0, prevent_self_review:false, reviewers:[{type:'User',id}],
