@@ -1,3 +1,4 @@
 test/
 node_modules/
 .gitignore
+node-red-contrib-debug-file-*.tgz
