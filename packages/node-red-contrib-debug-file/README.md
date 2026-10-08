@@ -4,10 +4,10 @@ A Debug-style Node-RED node with one append-only UTF-8 JSONL file per node.
 Version 0.2.0 replaces the proposed legacy/sidecar design. No existing flows
 require migration. No plain `.log` file is created.
 
-Install the published version through **Menu → Manage palette** or run
-`npm install node-red-contrib-debug-file@0.2.0` in your Node-RED user directory,
+After 0.2.2 is published, install it through **Menu → Manage palette** or run
+`npm install node-red-contrib-debug-file@0.2.2` in your Node-RED user directory,
 then restart Node-RED. If publication is pending, install the release tarball
-with `npm install /path/to/node-red-contrib-debug-file-0.2.0.tgz` instead.
+with `npm install /path/to/node-red-contrib-debug-file-0.2.2.tgz` instead.
 No deployed flows or HAOS installation are changed by this repository.
 
 ## Configuration
@@ -42,7 +42,10 @@ permissions.
 {"timestamp":"2026-10-08T12:00:00.000Z","nodeId":"n1","flowId":"f1","nodeName":"Debug n1","messageId":"m1","selectedProperty":"payload","targetType":"msg","serializedValue":"23.5","valueFormat":"legacy-text","truncated":false,"redacted":false,"writeResult":{"status":"written","stage":"write","code":null}}
 ```
 
-Each record is one JSON line terminated by LF. Timestamp is captured at input.
+Each record is one JSON line terminated by LF. An existing nonempty file
+without a trailing LF receives a separator before the next record; historical
+concatenated or partial records are preserved, not repaired. Existing logs must
+be readable and writable by the Node-RED user for the verified tail check. Timestamp is captured at input.
 Primitive metadata is capped at 256 UTF-16 units; other metadata becomes null.
 Text remains text; objects are serialized as bounded JSON text; undefined and
 bigint become text. Buffers use base64 with `valueFormat: "base64"`.
@@ -87,8 +90,8 @@ proxies can execute traps during selection/traversal; flow code is trusted.
 
 ## Development and release
 
-Run `npm test` and `npm pack --dry-run` before release. This checkout has no
-configured Git remote or automated publication workflow. Publish only a new
+Run `npm test` and `npm pack --dry-run` before release. The monorepo provides guarded publication tooling; see
+[the publishing guide](../../docs/PUBLISHING.md). Publish only a new
 version after tests and review, with authenticated npm access; never overwrite
 an existing release. The release requires no live external-service writes.
 See SECURITY.md for the security review and remaining limits.

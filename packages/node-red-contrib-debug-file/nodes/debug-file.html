@@ -29,6 +29,7 @@ RED.nodes.registerType("debug-file", {
 <div class="form-row"><label>Create directory</label><input id="node-input-createDir" type="checkbox"></div>
 <div class="form-row"><label for="node-input-jsonlMaxValueBytes">Value bytes</label><input id="node-input-jsonlMaxValueBytes" type="number" min="1" max="1048576"></div>
 <div class="form-row"><label>Omit file value</label><input id="node-input-jsonlRedactValue" type="checkbox"></div>
+<div class="form-row">Internal version: <span id="debug-file-version">0.2.2</span></div>
 <div class="form-tips">One UTF-8 JSONL file per node: debug-&lt;SHA-256 of node ID&gt;.log.jsonl. Display renames keep the same file.</div>
 </script>
 <script type="text/html" data-help-name="debug-file">

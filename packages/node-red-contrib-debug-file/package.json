@@ -1,6 +1,6 @@
 {
   "name": "node-red-contrib-debug-file",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Debug-style Node-RED logging with bounded, secure JSONL output.",
   "license": "MIT",
   "keywords": [

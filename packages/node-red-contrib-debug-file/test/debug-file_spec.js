@@ -36,6 +36,35 @@ describe("JSONL debug file", function() {
         assert.equal(r.nodeId, "n1"); assert.equal(r.flowId, "flow1"); assert.equal(r.messageId, "m1");
         assert.equal(r.truncated, false); assert.equal(r.redacted, false);
     });
+    it("writes two consecutive messages as exactly two independently parseable LF-terminated lines", async function() {
+        const n = make();
+        assert.deepEqual(await Promise.all([input(n, { mac: "one" }), input(n, { mac: "two" })]), [undefined, undefined]);
+        const text = await fs.readFile(path.join(dir, filename("n1")), "utf8");
+        const lines = text.split("\n");
+        assert.equal(lines.length, 3); assert.equal(lines.pop(), "");
+        assert.deepEqual(lines.map(line => JSON.parse(JSON.parse(line).serializedValue)), [{ mac: "one" }, { mac: "two" }]);
+    });
+    it("separates an existing unterminated record without rewriting historical bytes", async function() {
+        const f = path.join(dir, filename("n1"));
+        const original = '{"mac":"old"}'; await fs.writeFile(f, original);
+        const n = make(); await input(n, "new"); await input(n, "next");
+        const text = await fs.readFile(f, "utf8");
+        assert(text.startsWith(original + "\n"));
+        const lines = text.split("\n"); assert.equal(lines.pop(), "");
+        assert.equal(lines.length, 3); lines.forEach(line => JSON.parse(line));
+    });
+    it("reopens the destination after external rotation", async function() {
+        const n = make(); await input(n, "before");
+        const f = path.join(dir, filename("n1")); await fs.rename(f, f + ".1");
+        await input(n, "after");
+        assert.equal(JSON.parse(await fs.readFile(f + ".1", "utf8")).serializedValue, "before");
+        assert.deepEqual((await records()).map(r => r.serializedValue), ["after"]);
+    });
+    it("displays the package version in the editor", async function() {
+        const html = await fs.readFile(path.join(__dirname, "../nodes/debug-file.html"), "utf8");
+        const version = require("../package.json").version;
+        assert.equal(html.match(/id="debug-file-version">([^<]+)<\/span>/)[1], version);
+    });
     it("keeps identity across restart and rename; equal names never collide or double extensions", async function() {
         await input(make({ name: "Same.log.jsonl" }), "one");
         await input(make({ name: "Same.log.jsonl", id: "n2" }), "two");

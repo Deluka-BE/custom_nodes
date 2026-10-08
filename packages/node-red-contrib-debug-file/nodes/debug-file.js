@@ -89,7 +89,7 @@ async function append(directory, filename, line, create) {
     let handle;
     try {
         const target = `/proc/self/fd/${parent.fd}/${filename}`;
-        const flags = C.O_WRONLY | C.O_APPEND | C.O_NOFOLLOW | C.O_NONBLOCK;
+        const flags = C.O_RDWR | C.O_APPEND | C.O_NOFOLLOW | C.O_NONBLOCK;
         let created = false;
         try { handle = await fsp.open(target, flags | C.O_CREAT | C.O_EXCL, 0o644); created = true; }
         catch (err) { if (err.code !== "EEXIST") throw err; handle = await fsp.open(target, flags); }
@@ -97,7 +97,16 @@ async function append(directory, filename, line, create) {
         if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid()) throw failure("UNSAFE_LOG_FILE");
         // Only this verified open inode is chmodded. Never grant permissions on an existing file.
         await handle.chmod(created ? 0o644 : (stat.mode & 0o644));
-        await handle.writeFile(line, "utf8");
+        // Inspect only the verified inode; reopen on every append for external rotation.
+        // Preserve historical bytes, but separate an unterminated last record.
+        let separator = "";
+        if (stat.size > 0) {
+            const tail = Buffer.alloc(1);
+            const { bytesRead } = await handle.read(tail, 0, 1, stat.size - 1);
+            if (bytesRead !== 1) throw failure("LOG_FILE_CHANGED");
+            if (tail[0] !== 10) separator = "\n";
+        }
+        await handle.writeFile(separator + line, "utf8");
     } finally { if (handle) await handle.close(); await parent.close(); }
 }
 module.exports = function (RED) {
