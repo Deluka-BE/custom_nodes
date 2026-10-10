@@ -18,4 +18,15 @@ describe("Node-RED runtime integration", function() {
         const n = helper.getNode("n1"); await new Promise(resolve => { n.on("call:status", call => { if (call.args[0].text === "written") resolve(); }); n.receive({ payload: 4 }); });
         const [file] = await fs.readdir(dir); assert.equal(JSON.parse(await fs.readFile(path.join(dir, file), "utf8")).serializedValue, "8");
     });
+    it("toggles through the actual admin route without deploy", async function() {
+        await new Promise(resolve => helper.load(debugFile, [{ id: "n1", type: "debug-file", directory: dir, name: "readable", readableFilename: true, filenameOwner: "debug-file:n1", tosidebar: false }], resolve));
+        const n = helper.getNode("n1");
+        await helper.request().post("/debug-file/n1/disable").expect(201); assert.equal(n.active, false);
+        await helper.request().post("/debug-file/n1/enable").expect(200); assert.equal(n.active, true);
+        await helper.request().post("/debug-file/n1/invalid").expect(404);
+        await helper.request().post("/debug-file/missing/disable").expect(404);
+        await new Promise(resolve => { n.on("call:status", call => { if (call.args[0].text === "written") resolve(); }); n.receive({ payload: "route enabled" }); });
+        assert.deepEqual(await fs.readdir(dir), ["readable.log.jsonl"]);
+    });
+
 });

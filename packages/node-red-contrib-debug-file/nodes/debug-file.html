@@ -1,9 +1,24 @@
 <script type="text/javascript">
+function debugFileBase(name) {
+    return String(name || "debug_file").replace(/(?:\.log)?\.jsonl$|\.log$/i, "").replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 80) || "debug_file";
+}
+function debugFileNaming(node, name) {
+    if (!node.readableFilename) return;
+    if (node.filenameOwner !== "debug-file:" + node.id) { node.filenameOwner = "debug-file:" + node.id; node.filenameSuffix = ""; }
+    var collision = false;
+    RED.nodes.eachNode(function(other) {
+        if (other.id !== node.id && other.type === "debug-file" && other.readableFilename && !other.filenameSuffix && debugFileBase(other.name) === debugFileBase(name)) collision = true;
+    });
+    if (collision && !node.filenameSuffix) node.filenameSuffix = "id";
+}
+function debugFileToggle(node, success, error) {
+    $.ajax({ url: "debug-file/" + encodeURIComponent(node.id) + "/" + (node.active ? "enable" : "disable"), type: "POST", success: success, error: error });
+}
 RED.nodes.registerType("debug-file", {
     category: "common", color: "#87a980", inputs: 1, outputs: 0, align: "right",
     icon: "font-awesome/fa-bug", paletteLabel: "debug file",
     defaults: {
-        name: { value: "" }, complete: { value: "payload", required: true }, targetType: { value: "msg" },
+        name: { value: "" }, active: { value: true }, readableFilename: { value: false }, filenameOwner: { value: "" }, filenameSuffix: { value: "" }, complete: { value: "payload", required: true }, targetType: { value: "msg" },
         tosidebar: { value: true }, console: { value: false }, fileEnabled: { value: true },
         directory: { value: "/share/nodered-logs/", required: true, validate: RED.validators.typedInput({ typeField: "directoryType" }) },
         directoryType: { value: "str" }, createDir: { value: true },
@@ -11,10 +26,30 @@ RED.nodes.registerType("debug-file", {
         jsonlRedactValue: { value: false }
     },
     label: function() { return this.name || "Debug " + this.id; },
-    onadd: function() { if (!this.name) this.name = "Debug " + this.id; },
+    button: {
+        toggle: "active",
+        onclick: function() {
+            var node = this;
+            debugFileToggle(node, function() {
+                RED.history.push({ t: "edit", node: node, changes: { active: !node.active }, dirty: node.dirty, changed: node.changed,
+                    callback: function(ev) { debugFileToggle(ev.node); } });
+                node.changed = true; node.dirty = true; RED.nodes.dirty(true); RED.view.redraw();
+            }, function() { node.active = !node.active; node.dirty = true; RED.view.redraw(); RED.notify("Debug file toggle failed; check deployment and permissions.", "error"); });
+        }
+    },
+    onadd: function() {
+        if (!this.name) {
+            var used = new Set();
+            RED.nodes.eachNode(function(n) { used.add(n.name); });
+            var i = 1;
+            while (used.has("debug_file_" + String(i).padStart(2, "0"))) i++;
+            this.name = "debug_file_" + String(i).padStart(2, "0"); this.readableFilename = true;
+        }
+        debugFileNaming(this, this.name);
+    },
+    oneditsave: function() { debugFileNaming(this, $("#node-input-name").val()); },
     oneditprepare: function() {
         $("#debug-file-version").text(RED.settings.debugFileVersion);
-        if (!this.name) $("#node-input-name").val("Debug " + this.id);
         $("#node-input-complete").typedInput({ default: "msg", types: ["msg", "jsonata"], typeField: "#node-input-targetType" });
         $("#node-input-directory").typedInput({ default: "str", types: ["str", "msg", "jsonata", "env"], typeField: "#node-input-directoryType" });
     }
@@ -31,10 +66,10 @@ RED.nodes.registerType("debug-file", {
 <div class="form-row"><label for="node-input-jsonlMaxValueBytes">Value bytes</label><input id="node-input-jsonlMaxValueBytes" type="number" min="1" max="1048576"></div>
 <div class="form-row"><label>Omit file value</label><input id="node-input-jsonlRedactValue" type="checkbox"></div>
 <div class="form-row">Internal version: <span id="debug-file-version"></span></div>
-<div class="form-tips">One UTF-8 JSONL file per node: debug-&lt;SHA-256 of node ID&gt;.log.jsonl. Display renames keep the same file.</div>
+<div class="form-tips">New nodes use &lt;safe-name&gt;.log.jsonl (duplicates have a stable suffix). Legacy nodes retain ID filenames. Renaming selects a new target and preserves old logs.</div>
 </script>
 <script type="text/html" data-help-name="debug-file">
-<p>Writes one append-only UTF-8 JSONL file per node in /share/nodered-logs/ by default. No plain .log file is created. The node ID determines a stable filename; display names never become paths. No output port.</p>
+<p>Writes one append-only UTF-8 JSONL file per node in /share/nodered-logs/ by default. No plain .log file is created. Legacy nodes keep their ID filenames. New nodes use sanitized names. Renames select a new target and preserve old files. Returning to an old name requires valid own history; foreign or corrupt targets stop logging. Names changed by sanitization receive a full name digest. The button takes effect immediately; Deploy saves its state for restart. No output port.</p>
 <p>Select a message property, complete message (true), or JSONata expression. Records include UTC timestamp, node/flow/message IDs, selected property, node name, serializedValue, valueFormat, truncated, redacted and writeResult. Compatible with personal-mcp-gateway v0.2.24.</p>
 <p>Values default to 65536 bytes; object traversal is bounded and getters/toJSON are skipped. Buffers use base64. Truncation is explicit. Redaction omits serializedValue; sidebar output is independent. Maximum 128 outstanding events; overflow and I/O failures reach Catch nodes. Failed writes cannot reliably store a failure record.</p>
 <p>Linux safe descriptor opening is required. Symlinks, hardlinks and nonregular files are rejected. New files use 0644, new directories 0755; existing file modes only lose permissions. Directory configuration is trusted. Grant MCP read-only access separately; this node never configures MCP permissions. Configure retention upstream; logging is best effort without fsync or rotation.</p>

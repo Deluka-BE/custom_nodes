@@ -22,7 +22,7 @@ describe("Editor package version", function() {
                 let exported;
                 // Use Node-RED's real settings validation/export, including its required node prefix.
                 runtimeSettings.init({});
-                require(path.join(deployed, "nodes/debug-file.js"))({ nodes: {
+                require(path.join(deployed, "nodes/debug-file.js"))({ httpAdmin: { post() {} }, auth: { needsPermission() {} }, nodes: {
                     registerType(type, constructor, options) {
                         runtimeSettings.registerNodeSettings(type, options.settings);
                         exported = runtimeSettings.exportNodeSettings({});

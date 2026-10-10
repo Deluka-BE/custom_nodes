@@ -7,19 +7,20 @@ const EventEmitter = require("events");
 const register = require("../nodes/debug-file");
 const filename = id => `debug-${crypto.createHash("sha256").update(id).digest("hex")}.log.jsonl`;
 describe("JSONL debug file", function() {
-    let dir, Node, nodes, settings, published;
+    let dir, Node, nodes, settings, published, route, permission;
     beforeEach(async function() {
         dir = await fs.mkdtemp(path.join(os.tmpdir(), "debug-jsonl-")); nodes = []; settings = {}; published = [];
-        register({ settings, nodes: {
+        register({ settings, httpAdmin: { post(url, auth, handler) { route = handler; } }, auth: { needsPermission(p) { permission = p; return () => {}; } }, nodes: {
+            getNode(id) { return nodes.find(n => n.id === id); },
             createNode(node, config) {
                 Object.setPrototypeOf(Node.prototype, EventEmitter.prototype); EventEmitter.call(node);
-                node.id = config.id || "n1"; node.z = "flow1"; node.status = s => node.lastStatus = s;
+                node.type = "debug-file"; node.id = config.id || "n1"; node.z = "flow1"; node.status = s => node.lastStatus = s;
                 node.error = e => { node.lastError = e; }; node.log = s => { node.lastLog = s; };
             }, registerType(type, constructor) { Node = constructor; }
         }, util: {
             getMessageProperty(msg, prop) { return msg[prop]; },
-            evaluateNodeProperty(v, type, node, msg, cb) { if (type === "bad") cb(new Error("secret")); else cb(null, type === "msg" ? msg[v] : v); },
-            prepareJSONataExpression(v) { return v; }, evaluateJSONataExpression(v, msg, cb) { cb(null, msg.payload * 2); },
+            evaluateNodeProperty(v, type, node, msg, cb) { if (type === "delayed") { settings.directoryCallback = () => cb(null, v); return; } if (type === "bad") cb(new Error("secret")); else cb(null, type === "msg" ? msg[v] : v); },
+            prepareJSONataExpression(v) { return v; }, evaluateJSONataExpression(v, msg, cb) { if (v === "delayed") settings.selectionCallback = () => cb(null, msg.payload); else cb(null, msg.payload * 2); },
             encodeObject(v) { return v; }
         }, comms: { publish(topic, v) { published.push(v); } } });
     });
@@ -143,10 +144,201 @@ describe("JSONL debug file", function() {
         assert.equal((await records()).length, 128); assert.equal((await input(n, 1)).code, "DEBUG_FILE_CLOSING");
     });
     it("editor defaults and controls match the runtime", async function() {
-        const vm = require("vm"); const html = await fs.readFile(path.join(__dirname, "../nodes/debug-file.html"), "utf8"); let editor;
-        vm.runInNewContext(html.match(/<script type="text\/javascript">([\s\S]*?)<\/script>/)[1], { RED: { nodes: { registerType(t, v) { editor = v; } }, validators: { typedInput() { return () => true; } } } });
+        const vm = require("vm"); const html = await fs.readFile(path.join(__dirname, "../nodes/debug-file.html"), "utf8"); let editor; const a = { id: "a", type: "debug-file" }, b = { id: "b", type: "debug-file" };
+        vm.runInNewContext(html.match(/<script type="text\/javascript">([\s\S]*?)<\/script>/)[1], { RED: { nodes: { eachNode(cb) { [a, b].filter(n => n.name).forEach(cb); }, registerType(t, v) { editor = v; } }, validators: { typedInput() { return () => true; } } } });
         assert.equal(editor.defaults.directory.value, "/share/nodered-logs/"); assert.equal(editor.defaults.createDir.value, true);
-        const a = { id: "a" }, b = { id: "b" }; editor.onadd.call(a); editor.onadd.call(b); assert.notEqual(a.name, b.name);
+        editor.onadd.call(a); editor.onadd.call(b); assert.equal(a.name, "debug_file_01"); assert.equal(b.name, "debug_file_02");
         assert(!Object.hasOwn(editor.defaults, "jsonlEnabled")); assert(!Object.hasOwn(editor.defaults, "overwriteFile"));
     });
+    function readable(name, extra = {}) { return make({ name, readableFilename: true, filenameOwner: "debug-file:n1", ...extra }); }
+    function toggle(id, state) { let status; route({ params: { id, state } }, { sendStatus(code) { status = code; } }); return status; }
+    it("creates a new target on rename, appends on restart and safely returns to an old name", async function() {
+        await input(readable("alpha"), "before");
+        const original = await fs.readFile(path.join(dir, "alpha.log.jsonl"));
+        await input(readable("beta", { filenameHistory: ["alpha.log.jsonl"] }), "after");
+        assert((await fs.readFile(path.join(dir, "alpha.log.jsonl"))).equals(original));
+        await input(readable("beta"), "restart");
+        assert.equal((await fs.readFile(path.join(dir, "beta.log.jsonl"), "utf8")).trim().split("\n").length, 2);
+        await input(readable("alpha"), "return");
+        assert((await fs.readFile(path.join(dir, "alpha.log.jsonl"))).subarray(0, original.length).equals(original));
+        assert.deepEqual((await fs.readdir(dir)).sort(), ["alpha.log.jsonl", "beta.log.jsonl"]);
+    });
+    it("ignores corrupt, foreign and unsafe old history without directory scans or migration", async function() {
+        await fs.writeFile(path.join(dir, "old.log.jsonl"), "corrupt");
+        await fs.symlink("old.log.jsonl", path.join(dir, "alpha.log.jsonl"));
+        const originals = { readdir: fs.readdir, link: fs.link, unlink: fs.unlink, rename: fs.rename };
+        for (const key of Object.keys(originals)) fs[key] = async () => { throw Error("forbidden operation " + key); };
+        try { assert.equal(await input(readable("beta", { filenameHistory: ["alpha.log.jsonl", "../invalid"] }), 2), undefined); }
+        finally { Object.assign(fs, originals); }
+        assert.equal(await fs.readFile(path.join(dir, "old.log.jsonl"), "utf8"), "corrupt");
+    });
+    it("keeps duplicate names isolated with stable suffixes and handles copies", async function() {
+        await input(readable("same"), 1);
+        await input(readable("same", { id: "n2", filenameOwner: "debug-file:n2", filenameSuffix: "id" }), 2);
+        await input(readable("same", { id: "n2", filenameOwner: "debug-file:n2", filenameSuffix: "id" }), 3);
+        assert.equal((await fs.readdir(dir)).length, 2);
+        await input(readable("same", { id: "n3" }), 4);
+        assert.equal((await fs.readdir(dir)).length, 3);
+    });
+    it("sanitizes names and prevents path traversal or extension duplication", async function() {
+        await input(readable("../../nice.log.jsonl"), 1);
+        assert.match((await fs.readdir(dir))[0], /^_nice-[a-f0-9]{64}\.log\.jsonl$/);
+        assert.throws(() => readable("bad", { filenameSuffix: "../bad" }), /FILENAME/);
+    });
+    it("retains dynamic logging without migrating old files", async function() {
+        await input(readable("alpha", { directory: "folder", directoryType: "msg" }), 1, { folder: dir });
+        await input(readable("beta", { directory: "folder", directoryType: "msg" }), 2, { folder: dir });
+        assert.deepEqual((await fs.readdir(dir)).sort(), ["alpha.log.jsonl", "beta.log.jsonl"]);
+    });
+    it("protects toggle route, rejects invalid/wrong nodes and drains accepted writes", async function() {
+        const n = make(); const accepted = Array.from({ length: 20 }, (_, i) => input(n, i));
+        assert.equal(permission, "debug.write"); assert.equal(toggle("n1", "disable"), 201);
+        assert.equal((await input(n, "rejected")).code, "DEBUG_FILE_DISABLED");
+        assert((await Promise.all(accepted)).every(v => !v)); assert.equal((await records()).length, 20);
+        assert.equal(toggle("n1", "enable"), 200); assert.equal(await input(n, 21), undefined);
+        assert.equal(toggle("missing", "enable"), 404); assert.equal(toggle("n1", "bad"), 404);
+        n.type = "other"; assert.equal(toggle("n1", "disable"), 404);
+        assert.equal((await input(make({ id: "off", active: false }), 1)).code, "DEBUG_FILE_DISABLED");
+        assert.equal(await input(make({ id: "restart" }), 1), undefined);
+    });
+
+    it("deploy without a message leaves old logs and permissions untouched", async function() {
+        await input(readable("alpha"), 1); await fs.chmod(path.join(dir, "alpha.log.jsonl"), 0o600);
+        const n = readable("beta", { filenameHistory: ["alpha.log.jsonl"] });
+        await new Promise(resolve => n.emit("close", resolve));
+        assert.deepEqual(await fs.readdir(dir), ["alpha.log.jsonl"]);
+        assert.equal((await fs.stat(path.join(dir, "alpha.log.jsonl"))).mode & 0o777, 0o600);
+    });
+    it("drains asynchronous selections and directory evaluations accepted before disable", async function() {
+        const a = make({ complete: "delayed", targetType: "jsonata", tosidebar: true });
+        const accepted = input(a, 1); toggle("n1", "disable");
+        assert.equal((await input(a, 2)).code, "DEBUG_FILE_DISABLED");
+        settings.selectionCallback(); assert.equal(await accepted, undefined); assert.equal(published.length, 1);
+        const b = make({ id: "n2", directoryType: "delayed" }); const next = input(b, 3);
+        toggle("n2", "disable"); settings.directoryCallback(); assert.equal(await next, undefined);
+        assert.equal((await records("n2")).length, 1);
+    });
+    it("does not change logs when toggled and restart honors only deployed state", async function() {
+        const n = make(); await input(n, 1); const before = await fs.readFile(path.join(dir, filename("n1")));
+        toggle("n1", "disable"); assert.equal((await input(n, 2)).code, "DEBUG_FILE_DISABLED");
+        assert((await fs.readFile(path.join(dir, filename("n1")))).equals(before));
+        await input(make(), 3); assert.equal((await records()).length, 2);
+        assert.equal((await input(make({ active: false }), 4)).code, "DEBUG_FILE_DISABLED");
+    });
+    it("preserves readable rotation and rejects foreign replacements", async function() {
+        const n = readable("alpha"); await input(n, 1); const f = path.join(dir, "alpha.log.jsonl");
+        await fs.rename(f, f + ".1"); await input(n, 2);
+        assert.equal(JSON.parse(await fs.readFile(f, "utf8")).serializedValue, "2");
+        await fs.writeFile(f, JSON.stringify({ nodeId: "other", serializedValue: "private" }) + "\n");
+        const before = await fs.readFile(f); assert.equal((await input(n, 3)).code, "DEBUG_FILE_LOG_OWNERSHIP");
+        assert((await fs.readFile(f)).equals(before));
+    });
+    it("validates multi-chunk own history once and preserves unterminated bytes", async function() {
+        const original = Array.from({ length: 5000 }, (_, i) => JSON.stringify({ nodeId: "n1", value: "😀".repeat(20), i })).join("\n");
+        const f = path.join(dir, "alpha.log.jsonl"); await fs.writeFile(f, original);
+        const open = fs.open; let scans = 0;
+        fs.open = async (...args) => {
+            const h = await open(...args); const stream = h.createReadStream;
+            h.createReadStream = function(...args) { scans++; return stream.apply(this, args); }; return h;
+        };
+        try {
+            const n = readable("alpha", { directory: "folder", directoryType: "msg" });
+            for (let i = 0; i < 30; i++) assert.equal(await input(n, i, { folder: dir }), undefined);
+            assert.equal(scans, 1);
+            await fs.appendFile(f, '{"nodeId":"n1"}\n');
+            assert.equal(await input(n, 31, { folder: dir }), undefined); assert.equal(scans, 2);
+            assert.equal(await input(readable("alpha"), 32), undefined); assert.equal(scans, 3);
+        } finally { fs.open = open; }
+        assert((await fs.readFile(f, "utf8")).startsWith(original + "\n"));
+    });
+    it("fails closed on foreign, mixed, corrupt, empty, symlink and hardlink current targets", async function() {
+        const f = path.join(dir, "alpha.log.jsonl");
+        for (const content of ['', '{"nodeId":"other"}\n', '{"nodeId":"n1"}\n{"nodeId":"other"}\n', '{"nodeId":"n1"}\ncorrupt']) {
+            await fs.writeFile(f, content); assert(await input(readable("alpha"), 1));
+            assert.equal(await fs.readFile(f, "utf8"), content);
+        }
+        await fs.unlink(f); const other = path.join(dir, "other"); await fs.writeFile(other, '{"nodeId":"n1"}\n');
+        await fs.symlink(other, f); assert(await input(readable("alpha"), 1)); await fs.unlink(f);
+        await fs.link(other, f); assert.equal((await input(readable("alpha"), 1)).code, "DEBUG_FILE_UNSAFE_LOG_FILE");
+        assert.equal(await fs.readFile(other, "utf8"), '{"nodeId":"n1"}\n');
+    });
+    it("invalidates cached ownership on same-size rewrites and timestamp restoration", async function() {
+        const n = readable("alpha"); await input(n, 1); const f = path.join(dir, "alpha.log.jsonl");
+        const stat = await fs.stat(f); const content = (await fs.readFile(f, "utf8")).replace('"nodeId":"n1"', '"nodeId":"n2"');
+        await fs.writeFile(f, content); await fs.utimes(f, stat.atime, stat.mtime);
+        assert.equal((await input(n, 2)).code, "DEBUG_FILE_LOG_OWNERSHIP"); assert.equal(await fs.readFile(f, "utf8"), content);
+    });
+    it("different visible names with equal sanitized basenames select different targets", async function() {
+        for (const name of ["a b", "a?b", "alpha", "alpha.log", "x".repeat(81), "x".repeat(80) + "y"]) {
+            assert.equal(await input(readable(name), name), undefined);
+        }
+        assert.equal((await fs.readdir(dir)).length, 6);
+    });
+    it("checks cached targets again for hardlinks and symlink replacements", async function() {
+        const n = readable("alpha"); assert.equal(await input(n, 1), undefined);
+        const f = path.join(dir, "alpha.log.jsonl"), archive = path.join(dir, "archive");
+        const before = await fs.readFile(f); await fs.link(f, archive);
+        assert.equal((await input(n, 2)).code, "DEBUG_FILE_UNSAFE_LOG_FILE");
+        assert((await fs.readFile(archive)).equals(before));
+        await fs.unlink(f); await fs.symlink(archive, f);
+        assert(await input(n, 3)); assert((await fs.readFile(archive)).equals(before));
+    });
+    it("revalidates alternating dynamic targets and refuses mixed history in either directory", async function() {
+        const other = path.join(dir, "other"); await fs.mkdir(other);
+        const n = readable("alpha", { directory: "folder", directoryType: "msg" });
+        for (const folder of [dir, other, dir, other]) assert.equal(await input(n, 1, { folder }), undefined);
+        const f = path.join(dir, "alpha.log.jsonl"); await fs.appendFile(f, '{"nodeId":"other"}\n');
+        const before = await fs.readFile(f);
+        assert.equal((await input(n, 2, { folder: dir })).code, "DEBUG_FILE_LOG_OWNERSHIP");
+        assert((await fs.readFile(f)).equals(before));
+        assert.equal(await input(n, 3, { folder: other }), undefined);
+    });
+    it("never overwrites a foreign destination created at the exclusive-open boundary", async function() {
+        const open = fs.open; let injected = false;
+        fs.open = async (target, flags, ...args) => {
+            if (!injected && String(target).endsWith('/alpha.log.jsonl') && (flags & require('fs').constants.O_EXCL)) {
+                injected = true; await fs.writeFile(path.join(dir, 'alpha.log.jsonl'), '{"nodeId":"foreign"}\n');
+            }
+            return open(target, flags, ...args);
+        };
+        try { assert.equal((await input(readable("alpha"), 1)).code, "DEBUG_FILE_LOG_OWNERSHIP"); }
+        finally { fs.open = open; }
+        assert.equal(await fs.readFile(path.join(dir, 'alpha.log.jsonl'), 'utf8'), '{"nodeId":"foreign"}\n');
+    });
+
+    it("ignores malformed legacy filenameHistory for both naming modes", async function() {
+        for (const filenameHistory of [null, "invalid", 42, { unexpected: true }, ["../unsafe"]]) {
+            assert.equal(await input(readable("legacy-field", { filenameHistory }), 1), undefined);
+            assert.equal(await input(make({ filenameHistory }), 2), undefined);
+        }
+        assert.deepEqual((await fs.readdir(dir)).sort(), [filename("n1"), "legacy-field.log.jsonl"].sort());
+        const own = (await fs.readFile(path.join(dir, "legacy-field.log.jsonl"), "utf8")).trim().split("\n");
+        assert.equal(own.length, 5); own.forEach(line => assert.equal(JSON.parse(line).nodeId, "n1"));
+    });
+    it("streams own histories larger than 5 MiB and rejects foreign records beyond that boundary", async function() {
+        const f = path.join(dir, "large.log.jsonl");
+        const original = (JSON.stringify({ nodeId: "n1", value: "x".repeat(1024) }) + "\n").repeat(5200);
+        assert(Buffer.byteLength(original) > 5 * 1024 * 1024);
+        await fs.writeFile(f, original);
+        const n = readable("large"); assert.equal(await input(n, "accepted"), undefined);
+        assert((await fs.readFile(f, "utf8")).startsWith(original));
+        await fs.appendFile(f, '{"nodeId":"foreign"}\n');
+        const before = await fs.readFile(f);
+        assert.equal((await input(n, "rejected")).code, "DEBUG_FILE_LOG_OWNERSHIP");
+        assert((await fs.readFile(f)).equals(before));
+    });
+    it("rejects readable parent symlinks and nonregular targets without changing permissions", async function() {
+        const real = path.join(dir, "real"), link = path.join(dir, "link");
+        await fs.mkdir(real); await fs.symlink(real, link);
+        assert(await input(readable("alpha", { directory: link }), 1));
+        assert.deepEqual(await fs.readdir(real), []);
+        const f = path.join(dir, "alpha.log.jsonl");
+        require("child_process").execFileSync("mkfifo", ["-m", "600", f]);
+        assert(await input(readable("alpha"), 1));
+        assert.equal((await fs.stat(f)).mode & 0o777, 0o600);
+        await fs.unlink(f); await fs.mkdir(f, { mode: 0o700 });
+        assert(await input(readable("alpha"), 1));
+        assert.equal((await fs.stat(f)).mode & 0o777, 0o700);
+    });
+
 });
