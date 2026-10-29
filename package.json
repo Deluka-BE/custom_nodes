@@ -6,7 +6,7 @@
   },
   "devDependencies": {
     "mocha": "12.0.3",
-    "node-red": "5.0.8",
+    "node-red": "5.0.9",
     "node-red-node-test-helper": "0.3.6"
   }
 }
